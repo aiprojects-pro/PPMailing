@@ -1,93 +1,264 @@
-# CGD — Sistema de captación v0.4
+# PPMailing - Sistema de captacion B2B
 
-Esta versión añade dos capacidades al sistema:
+Repositorio operativo del sistema de captacion B2B usado para generar listados CSV de leads a partir de Google Places, webs publicas y fuentes oficiales como RAED.
 
-1. **Módulo de cruce con Google Places** (`core/cruce_places.py`) — Listo y probado.
-2. **Esqueleto del scraper RAED** (`core/scraper_raed.py`) — Pendiente de completar tras la captura DevTools.
+El proyecto no es una aplicacion web. Es un conjunto de scripts Python ejecutados por consola que generan ficheros intermedios JSON y salidas finales CSV en el directorio `data/`.
 
-## Cambios respecto a v0.3.1
+## Estado
 
-| Concepto | v0.3.1 | v0.4 |
-|---|---|---|
-| Fuentes de descubrimiento | Solo Google Places | Google Places + **cualquier listado externo** (RAED, CSV, etc.) |
-| Cruce nombre+localidad → datos Google | No | **Sí, con matching robusto** |
-| Filtro de tipos de negocio incompatibles | No | **Sí** (descarta bares, restaurantes, etc.) |
-| Soporte para fuentes oficiales (RAED, registros) | No | **Esqueleto listo** |
+- Version desplegada: `v0.4`
+- Runtime: Python 3.10 o superior
+- Sistema probado en Debian
+- Entrada principal: Google Places API
+- Fuente oficial soportada: RAED, Registro Andaluz de Entidades Deportivas
+- Salidas: JSON enriquecido, CSV de leads, logs de ejecucion
 
-## Casos de uso inmediatos
+## Estructura del proyecto
 
-### Caso 1 — Enriquecer los 23 colegios del CGCAFE (v0.1)
-
-El CSV de la v0.1 tiene nombre y dirección pero no email ni web validados. Con este módulo:
-
-```bash
-python scripts/cruzar_csv.py \
-    --input ../cgd_scraper_v01/data/colegios_cgcafe_inicial.csv \
-    --segmento admin_fincas \
-    --campo-nombre nombre \
-    --campo-localidad localidad \
-    --campo-provincia provincia \
-    --fuente-origen cgcafe
+```text
+.
+├── config/                 # Configuracion general, ciudades y segmentos
+├── core/                   # Logica de scraping, parsing, scoring y RAED
+├── docs/                   # Guias tecnicas de apoyo
+├── plantillas_email/       # Plantillas comerciales por segmento
+├── scripts/                # Comandos ejecutables
+├── data/                   # Salidas generadas, no versionadas
+├── logs/                   # Logs de ejecucion, no versionados
+├── requirements.txt
+├── run.sh                  # Wrapper para cargar .env y ejecutar scripts
+└── .env.example            # Plantilla de variables de entorno
 ```
 
-Salida: nuevo CSV con cada colegio ENRIQUECIDO con datos de Google (web, teléfono, rating, place_id). Después se puede ejecutar `extraer_emails.py` para sacar emails de las webs.
+Los directorios `data/`, `logs/`, `venv/` y `.env` estan excluidos del repositorio por seguridad y por contener datos generados o secretos.
 
-### Caso 2 — Enriquecer un listado manual de federaciones autonómicas
+## Requisitos del servidor
 
-Si tu equipo tiene un Excel con federaciones autonómicas trabajadas a mano, basta con:
-
-1. Guardar el Excel como CSV con columnas mínimas: `nombre`, `localidad`.
-2. Ejecutar el mismo script:
+Paquetes minimos en Debian:
 
 ```bash
-python scripts/cruzar_csv.py \
-    --input mi_listado_federaciones.csv \
-    --segmento clubes_deportivos \
-    --fuente-origen manual
+apt-get update
+apt-get install -y python3 python3-venv python3-pip git ca-certificates
 ```
 
-### Caso 3 — Enriquecer salida del scraper RAED (cuando esté listo)
-
-Cuando los técnicos completen la captura DevTools y se programe el scraper RAED:
+Para inspeccion o tratamiento manual de entregables puede ser util instalar tambien:
 
 ```bash
-# Paso 1: descargar RAED (cuando esté implementado)
-python scripts/descargar_raed.py --provincia Sevilla --tipo Club_deportivo
-
-# Paso 2: cruzar con Google
-python scripts/cruzar_csv.py \
-    --input data/raed_sevilla_clubes_AAAAMMDD.csv \
-    --segmento clubes_deportivos \
-    --campo-id numero_inscripcion \
-    --fuente-origen raed
+apt-get install -y curl unzip ripgrep
 ```
 
-## Características del matching
+## Despliegue en un contenedor nuevo
 
-El cruce con Google es robusto:
+Clonar el repositorio:
 
-- **Tolerante a variaciones tipográficas**: "C.D. Triana" matchea con "Club Deportivo Triana".
-- **Tolerante a acentos y mayúsculas**: "Náutico" con "Naútico", "GARCÍA" con "Garcia".
-- **Conservador frente a entidades equivocadas**: prefiere NO matchear antes que matchear erróneamente. Esto protege la reputación de envío.
-- **Filtra negocios de tipo incompatible**: si Google devuelve un bar llamado "Atlético Triana" para una búsqueda de club, se descarta automáticamente.
-- **Excepciones por segmento**: para campamentos, se aceptan resultados tipo "lodging" o "tourist_attraction"; para clubes no.
+```bash
+mkdir -p /opt/cgd
+cd /opt/cgd
+git clone https://github.com/aiprojects-pro/PPMailing.git cgd_scraper_v04
+cd cgd_scraper_v04
+```
 
-## Estado del scraper RAED
+Crear entorno virtual e instalar dependencias:
 
-Bloqueado a la espera de la captura DevTools. Ver `docs/guia_devtools_raed.md` para que el equipo de sistemas pueda hacerla en 10-15 minutos.
+```bash
+python3 -m venv venv
+./venv/bin/pip install --upgrade pip
+./venv/bin/pip install -r requirements.txt
+```
 
-Una vez completada la captura, el desarrollo del scraper toma 1-2 horas reales. El esqueleto en `core/scraper_raed.py` está listo y solo hay que rellenar las funciones marcadas con `TODO`.
+Crear el fichero de configuracion local:
 
-## Cómo se conecta esto con lo que ya teníamos
+```bash
+cp .env.example .env
+chmod 600 .env
+```
 
-Es importante entender que **NO sustituye al v0.3**, lo complementa:
+Editar `.env` y configurar la clave real:
 
-- **Descubrimiento masivo de un segmento** (sin lista previa) → `scripts/buscar.py --segmento X` (del v0.3).
-- **Enriquecimiento de una lista que ya tienes** → `scripts/cruzar_csv.py` (este v0.4).
-- **Extracción de emails** y scoring → mismos `extraer_emails.py` y `generar_csv.py` del v0.3 sobre los JSON resultantes.
+```bash
+export GOOGLE_PLACES_API_KEY="clave-real-de-google-places"
+```
 
-Es decir, el cruce con Places es una **fuente más** que el sistema puede usar, no un nuevo flujo paralelo.
+No se debe commitear `.env`. La clave debe estar restringida en Google Cloud por API y, si es posible, por IP del servidor.
 
-## Próxima sesión
+Validar instalacion:
 
-Cuando tus técnicos te pasen la captura DevTools del RAED (`captura_raed.txt`), envíamela y completo el scraper en una sola sesión.
+```bash
+./run.sh -c "from config.segmentos import SEGMENTOS; print(f'OK: {len(SEGMENTOS)} segmentos')"
+```
+
+El resultado esperado es:
+
+```text
+OK: 8 segmentos
+```
+
+## Segmentos disponibles
+
+Listar segmentos:
+
+```bash
+./run.sh scripts/buscar.py --listar-segmentos
+```
+
+Segmentos actualmente configurados:
+
+- `admin_fincas`
+- `clubes_deportivos`
+- `empresas_servicios_deportivos`
+- `campamentos_verano`
+- `academias_deportivas`
+- `ludotecas_ocio_infantil`
+- `asesorias`
+- `centros_formacion`
+
+## Flujo completo de captacion
+
+El flujo estandar consta de tres pasos:
+
+1. Buscar negocios en Google Places.
+2. Extraer emails desde las webs encontradas.
+3. Generar CSV final con scoring.
+
+Ejemplo para campamentos de verano en Andalucia:
+
+```bash
+./run.sh scripts/buscar.py --segmento campamentos_verano --ambito andalucia
+./run.sh scripts/extraer_emails.py --input campamentos_verano_andalucia_AAAAMMDD.json
+./run.sh scripts/generar_csv.py --input enriquecido_campamentos_verano_andalucia_AAAAMMDD.json
+```
+
+Tambien existe un wrapper para este piloto:
+
+```bash
+./flujo_campamentos_andalucia.sh
+```
+
+Las salidas se generan en `data/`:
+
+```text
+data/<segmento>_<ambito>_<fecha>.json
+data/enriquecido_<segmento>_<ambito>_<fecha>.json
+data/leads_<segmento>_<ambito>_<fecha>.csv
+```
+
+Los logs se generan en `logs/`.
+
+## RAED
+
+El scraper RAED permite descargar entidades deportivas del Registro Andaluz de Entidades Deportivas.
+
+Ejemplo:
+
+```bash
+./run.sh scripts/descargar_raed.py --provincia SEVILLA --tipo "Club deportivo"
+```
+
+Tipos soportados:
+
+- `Federacion deportiva`
+- `Club deportivo`
+- `Seccion deportiva`
+- `Sociedad anonima deportiva`
+
+El resultado se guarda como CSV en `data/`. Para enriquecer datos oficiales con web, telefono y email, usar posteriormente el cruce con Google Places:
+
+```bash
+./run.sh scripts/cruzar_csv.py \
+  --input data/raed_sevilla_club_deportivo_AAAAMMDD.csv \
+  --segmento clubes_deportivos \
+  --campo-nombre nombre \
+  --campo-localidad municipio \
+  --campo-provincia provincia \
+  --campo-id numero_inscripcion \
+  --fuente-origen raed
+```
+
+## Enriquecimiento de CSV externos
+
+Para enriquecer un CSV manual o procedente de otra fuente:
+
+```bash
+./run.sh scripts/cruzar_csv.py \
+  --input data/listado_manual.csv \
+  --segmento clubes_deportivos \
+  --campo-nombre nombre \
+  --campo-localidad localidad \
+  --campo-provincia provincia \
+  --fuente-origen manual
+```
+
+El CSV de entrada debe tener, como minimo, una columna de nombre. Localidad y provincia mejoran el matching.
+
+## Variables de entorno
+
+| Variable | Obligatoria | Uso |
+|---|---:|---|
+| `GOOGLE_PLACES_API_KEY` | Si | Consultas a Google Places API |
+
+La clave debe tener habilitadas las APIs:
+
+- Places API (New)
+- Geocoding API, si se utiliza geocodificacion
+
+## Seguridad y datos
+
+- No subir `.env` al repositorio.
+- No subir `data/` ni `logs/` si contienen leads, emails, telefonos o URLs visitadas.
+- Mantener permisos restrictivos en `.env`: `chmod 600 .env`.
+- Revisar cuotas y costes en Google Cloud durante ejecuciones grandes.
+- Antes de importar a Mautic/Odoo, revisar y deduplicar resultados por organizacion y email.
+
+## Operativa recomendada
+
+Para pilotos:
+
+```bash
+./run.sh scripts/buscar.py --segmento campamentos_verano --ambito andalucia --max-paginas 1
+```
+
+Para ejecuciones completas, usar el valor por defecto de paginacion y revisar el coste estimado de Places API antes de lanzar segmentos grandes como `clubes_deportivos`.
+
+Los segmentos con mayor volumen pueden tardar bastante porque el extractor de emails aplica un rate limit conservador contra webs externas.
+
+## Verificacion rapida
+
+Comprobar que la clave responde:
+
+```bash
+./run.sh - <<'PY'
+import os, requests
+
+r = requests.post(
+    "https://places.googleapis.com/v1/places:searchText",
+    headers={
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": os.environ["GOOGLE_PLACES_API_KEY"],
+        "X-Goog-FieldMask": "places.displayName,places.formattedAddress",
+    },
+    json={"textQuery": "administrador de fincas Sevilla"},
+    timeout=20,
+)
+print(r.status_code)
+print(r.text[:500])
+r.raise_for_status()
+PY
+```
+
+## Mantenimiento
+
+Actualizar codigo:
+
+```bash
+cd /opt/cgd/cgd_scraper_v04
+git pull
+./venv/bin/pip install -r requirements.txt
+```
+
+Limpiar salidas locales antiguas, si procede:
+
+```bash
+find data -type f -mtime +30 -delete
+find logs -type f -mtime +90 -delete
+```
+
+No borrar entregables pendientes de validacion sin confirmacion funcional.
