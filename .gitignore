@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+
+venv/
+__pycache__/
+*.py[cod]
+
+data/
+logs/
+
+*.log
+.DS_Store
+{config,core,scripts,docs,data,logs}/
