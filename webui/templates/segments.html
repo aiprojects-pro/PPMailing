@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Segmentos · PPMailing{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+  <h1>Segmentos</h1>
+  <div class="actions">
+    <a href="{{ url_for('segments.new') }}" class="btn">+ Nuevo segmento</a>
+  </div>
+</div>
+
+<p class="muted" style="margin-top: -8px; margin-bottom: 24px;">
+  Los <strong>segmentos del sistema</strong> vienen incluidos en el código fuente.
+  Los <strong>segmentos personalizados</strong> se almacenan en la base de datos
+  de la interfaz y se pueden lanzar igual que los del sistema.
+</p>
+
+<div class="section-title">Segmentos del sistema</div>
+<div class="segment-grid">
+  {% for sid, seg in segments.items() if seg.builtin %}
+    <div class="segment-card">
+      <span class="builtin-tag">sistema</span>
+      <h3>{{ seg.nombre_humano }}</h3>
+      <div class="seg-id">{{ sid }}</div>
+      <div class="seg-product">{{ seg.producto_cgd }}</div>
+      <div style="margin-top: 12px;">
+        <div class="muted" style="font-size: 11px; margin-bottom: 4px;">
+          {{ seg.queries|length }} queries · {{ seg.palabras_clave_web|length }} palabras clave
+        </div>
+        <details>
+          <summary class="muted" style="font-size: 12px; cursor: pointer;">Ver queries</summary>
+          <div class="tag-list">
+            {% for q in seg.queries %}<span class="tag">{{ q }}</span>{% endfor %}
+          </div>
+          {% if seg.palabras_clave_web %}
+          <div class="muted" style="font-size: 11px; margin-top: 8px;">Palabras clave web:</div>
+          <div class="tag-list">
+            {% for w in seg.palabras_clave_web %}<span class="tag">{{ w }}</span>{% endfor %}
+          </div>
+          {% endif %}
+        </details>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+{% set custom_count = segments.values()|rejectattr('builtin')|list|length %}
+{% if custom_count > 0 %}
+<div class="section-title">Segmentos personalizados</div>
+<div class="segment-grid">
+  {% for sid, seg in segments.items() if not seg.builtin %}
+    <div class="segment-card">
+      <span class="custom-tag">propio</span>
+      <h3>{{ seg.nombre_humano }}</h3>
+      <div class="seg-id">{{ sid }}</div>
+      <div class="seg-product">{{ seg.producto_cgd }}</div>
+      <div style="margin-top: 12px;">
+        <div class="muted" style="font-size: 11px; margin-bottom: 4px;">
+          {{ seg.queries|length }} queries · {{ seg.palabras_clave_web|length }} palabras clave
+        </div>
+        <details>
+          <summary class="muted" style="font-size: 12px; cursor: pointer;">Ver queries</summary>
+          <div class="tag-list">
+            {% for q in seg.queries %}<span class="tag">{{ q }}</span>{% endfor %}
+          </div>
+        </details>
+      </div>
+      <form method="post" action="{{ url_for('segments.delete', sid=sid) }}"
+            style="margin-top: 12px; text-align: right;"
+            onsubmit="return confirm('¿Eliminar el segmento {{ sid }}?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-sm btn-danger">Eliminar</button>
+      </form>
+    </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="section-title">Segmentos personalizados</div>
+<div class="card empty">
+  <p>No has creado segmentos personalizados todavía.</p>
+  <a href="{{ url_for('segments.new') }}" class="btn btn-secondary" style="margin-top: 8px;">
+    Crear uno
+  </a>
+</div>
+{% endif %}
+
+{% endblock %}

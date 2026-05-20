@@ -1,52 +1,54 @@
-# PPMailing - Sistema de captacion B2B
+# PPMailing
 
-Repositorio operativo del sistema de captacion B2B usado para generar listados CSV de leads a partir de Google Places, webs publicas y fuentes oficiales como RAED.
+Sistema interno de captacion B2B para generar, enriquecer y revisar leads a
+partir de Google Places, webs publicas y fuentes oficiales como RAED.
 
-El proyecto no es una aplicacion web. Es un conjunto de scripts Python ejecutados por consola que generan ficheros intermedios JSON y salidas finales CSV en el directorio `data/`.
+La version actual incluye dos modos de uso:
 
-## Estado
+- Interfaz web Flask para operativa diaria, gestion de usuarios, ejecucion de
+  busquedas, descarga de CSV, leads master, programaciones y configuracion.
+- Scripts CLI originales para ejecuciones manuales, mantenimiento o procesos
+  batch.
 
-- Version desplegada: `v0.4`
+Este repositorio no incluye secretos ni datos generados. Los ficheros `.env`,
+`data/`, `logs/` y `webui/instance/` deben existir solo en el servidor.
+
+## Estado de despliegue
+
 - Runtime: Python 3.10 o superior
-- Sistema probado en Debian
-- Entrada principal: Google Places API
-- Fuente oficial soportada: RAED, Registro Andaluz de Entidades Deportivas
-- Salidas: JSON enriquecido, CSV de leads, logs de ejecucion
+- Framework web: Flask + Gunicorn
+- Proxy recomendado: Nginx con Let's Encrypt
+- Persistencia web: SQLite en `webui/instance/ppmailing.db`
+- Cola de trabajos: interna al proceso web, por eso Gunicorn debe usar `-w 1`
+- Salidas CSV/JSON: `data/` y `webui/instance/job_outputs/`
+- Tests incluidos: pytest
 
-## Estructura del proyecto
+## Estructura
 
 ```text
 .
-├── config/                 # Configuracion general, ciudades y segmentos
-├── core/                   # Logica de scraping, parsing, scoring y RAED
-├── docs/                   # Guias tecnicas de apoyo
+├── config/                 # Segmentos, ciudades y configuracion base
+├── core/                   # Places, parsing, scoring, RAED y extraccion email
+├── docs/                   # Guias tecnicas de Google Cloud y RAED
+├── scripts/                # Entradas CLI
+├── webui/                  # Aplicacion Flask
+├── tests/                  # Suite de tests de la interfaz web
 ├── plantillas_email/       # Plantillas comerciales por segmento
-├── scripts/                # Comandos ejecutables
-├── data/                   # Salidas generadas, no versionadas
-├── logs/                   # Logs de ejecucion, no versionados
+├── data/                   # Datos generados; no versionado
+├── logs/                   # Logs locales; no versionado
 ├── requirements.txt
-├── run.sh                  # Wrapper para cargar .env y ejecutar scripts
-└── .env.example            # Plantilla de variables de entorno
+├── run.sh
+└── .env.example
 ```
 
-Los directorios `data/`, `logs/`, `venv/` y `.env` estan excluidos del repositorio por seguridad y por contener datos generados o secretos.
+## Instalacion en Debian
 
-## Requisitos del servidor
-
-Paquetes minimos en Debian:
+Paquetes base:
 
 ```bash
 apt-get update
-apt-get install -y python3 python3-venv python3-pip git ca-certificates
+apt-get install -y python3 python3-venv python3-pip git curl unzip ca-certificates
 ```
-
-Para inspeccion o tratamiento manual de entregables puede ser util instalar tambien:
-
-```bash
-apt-get install -y curl unzip ripgrep
-```
-
-## Despliegue en un contenedor nuevo
 
 Clonar el repositorio:
 
@@ -57,7 +59,7 @@ git clone https://github.com/aiprojects-pro/PPMailing.git cgd_scraper_v04
 cd cgd_scraper_v04
 ```
 
-Crear entorno virtual e instalar dependencias:
+Crear entorno Python:
 
 ```bash
 python3 -m venv venv
@@ -65,34 +67,151 @@ python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
 ```
 
-Crear el fichero de configuracion local:
+Crear directorios privados:
+
+```bash
+mkdir -p data logs webui/instance
+chmod 700 webui/instance
+```
+
+Configurar variables locales:
 
 ```bash
 cp .env.example .env
 chmod 600 .env
 ```
 
-Editar `.env` y configurar la clave real:
+Editar `.env` y definir como minimo:
 
 ```bash
-export GOOGLE_PLACES_API_KEY="clave-real-de-google-places"
+GOOGLE_PLACES_API_KEY=clave-real-de-google-places
 ```
 
-No se debe commitear `.env`. La clave debe estar restringida en Google Cloud por API y, si es posible, por IP del servidor.
+La clave de Google debe estar restringida en Google Cloud por API y, si es
+posible, por IP del servidor.
 
-Validar instalacion:
+## Arranque manual
+
+Para probar en local:
 
 ```bash
-./run.sh -c "from config.segmentos import SEGMENTOS; print(f'OK: {len(SEGMENTOS)} segmentos')"
+PPM_HOST=127.0.0.1 \
+PPM_PORT=5000 \
+PPM_DEBUG=0 \
+PPM_ADMIN_PASSWORD='cambiar-esta-password' \
+./venv/bin/python -m webui.app
 ```
 
-El resultado esperado es:
+La primera ejecucion crea el usuario `admin`. La variable
+`PPM_ADMIN_PASSWORD` solo se usa si la base de datos aun no contiene usuarios.
 
-```text
-OK: 8 segmentos
+## Despliegue con systemd
+
+Crear `/etc/ppmailing/ppmailing.env`:
+
+```bash
+mkdir -p /etc/ppmailing
+chmod 700 /etc/ppmailing
+cat >/etc/ppmailing/ppmailing.env <<'EOF'
+PPM_PROXIED=1
+PPM_HOST=127.0.0.1
+PPM_PORT=5000
+PPM_DEBUG=0
+PPM_ADMIN_PASSWORD=cambiar-esta-password
+GOOGLE_PLACES_API_KEY=clave-real-de-google-places
+EOF
+chmod 600 /etc/ppmailing/ppmailing.env
 ```
 
-## Segmentos disponibles
+Crear `/etc/systemd/system/ppmailing.service`:
+
+```ini
+[Unit]
+Description=PPMailing web interface
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/cgd/cgd_scraper_v04
+EnvironmentFile=/etc/ppmailing/ppmailing.env
+ExecStart=/opt/cgd/cgd_scraper_v04/venv/bin/gunicorn -w 1 -b 127.0.0.1:5000 'webui.app:create_app()'
+Restart=always
+RestartSec=5
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Activar:
+
+```bash
+systemctl daemon-reload
+systemctl enable --now ppmailing
+systemctl status ppmailing --no-pager
+```
+
+## Nginx y Let's Encrypt
+
+Instalar:
+
+```bash
+apt-get install -y nginx certbot python3-certbot-nginx
+```
+
+Virtual host de ejemplo para `mailing.aiprojects.pro`:
+
+```nginx
+server {
+    server_name mailing.aiprojects.pro;
+    client_max_body_size 2m;
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_read_timeout 300;
+    }
+}
+```
+
+Activar SSL:
+
+```bash
+nginx -t
+systemctl reload nginx
+certbot --nginx -d mailing.aiprojects.pro --redirect
+```
+
+Comprobar:
+
+```bash
+curl -I http://mailing.aiprojects.pro/
+curl -I https://mailing.aiprojects.pro/login
+```
+
+## Uso web
+
+Entrar en la URL publicada y acceder con el usuario administrador inicial.
+Tras el primer login, cambiar la password desde `Mi cuenta`.
+
+La interfaz permite:
+
+- lanzar busquedas por segmento y ambito;
+- ejecutar segmentos como `campamentos_verano`, `clubes_deportivos` o
+  `centros_formacion`;
+- descargar CSV de cada job finalizado;
+- revisar leads deduplicados en la tabla master;
+- configurar usuarios, presupuesto y clave de Google Places;
+- programar busquedas recurrentes;
+- configurar Mailgun para validacion/envio cuando proceda.
+
+## Uso CLI
 
 Listar segmentos:
 
@@ -100,26 +219,7 @@ Listar segmentos:
 ./run.sh scripts/buscar.py --listar-segmentos
 ```
 
-Segmentos actualmente configurados:
-
-- `admin_fincas`
-- `clubes_deportivos`
-- `empresas_servicios_deportivos`
-- `campamentos_verano`
-- `academias_deportivas`
-- `ludotecas_ocio_infantil`
-- `asesorias`
-- `centros_formacion`
-
-## Flujo completo de captacion
-
-El flujo estandar consta de tres pasos:
-
-1. Buscar negocios en Google Places.
-2. Extraer emails desde las webs encontradas.
-3. Generar CSV final con scoring.
-
-Ejemplo para campamentos de verano en Andalucia:
+Ejecutar campamentos de verano en Andalucia:
 
 ```bash
 ./run.sh scripts/buscar.py --segmento campamentos_verano --ambito andalucia
@@ -127,40 +227,13 @@ Ejemplo para campamentos de verano en Andalucia:
 ./run.sh scripts/generar_csv.py --input enriquecido_campamentos_verano_andalucia_AAAAMMDD.json
 ```
 
-Tambien existe un wrapper para este piloto:
-
-```bash
-./flujo_campamentos_andalucia.sh
-```
-
-Las salidas se generan en `data/`:
-
-```text
-data/<segmento>_<ambito>_<fecha>.json
-data/enriquecido_<segmento>_<ambito>_<fecha>.json
-data/leads_<segmento>_<ambito>_<fecha>.csv
-```
-
-Los logs se generan en `logs/`.
-
-## RAED
-
-El scraper RAED permite descargar entidades deportivas del Registro Andaluz de Entidades Deportivas.
-
-Ejemplo:
+Ejecutar RAED para clubes deportivos:
 
 ```bash
 ./run.sh scripts/descargar_raed.py --provincia SEVILLA --tipo "Club deportivo"
 ```
 
-Tipos soportados:
-
-- `Federacion deportiva`
-- `Club deportivo`
-- `Seccion deportiva`
-- `Sociedad anonima deportiva`
-
-El resultado se guarda como CSV en `data/`. Para enriquecer datos oficiales con web, telefono y email, usar posteriormente el cruce con Google Places:
+Cruzar un CSV RAED con Google Places:
 
 ```bash
 ./run.sh scripts/cruzar_csv.py \
@@ -173,92 +246,67 @@ El resultado se guarda como CSV en `data/`. Para enriquecer datos oficiales con 
   --fuente-origen raed
 ```
 
-## Enriquecimiento de CSV externos
+## Segmentos incluidos
 
-Para enriquecer un CSV manual o procedente de otra fuente:
+- `admin_fincas`
+- `clubes_deportivos`
+- `empresas_servicios_deportivos`
+- `campamentos_verano`
+- `academias_deportivas`
+- `ludotecas_ocio_infantil`
+- `asesorias`
+- `centros_formacion`
 
-```bash
-./run.sh scripts/cruzar_csv.py \
-  --input data/listado_manual.csv \
-  --segmento clubes_deportivos \
-  --campo-nombre nombre \
-  --campo-localidad localidad \
-  --campo-provincia provincia \
-  --fuente-origen manual
-```
+## Validacion
 
-El CSV de entrada debe tener, como minimo, una columna de nombre. Localidad y provincia mejoran el matching.
-
-## Variables de entorno
-
-| Variable | Obligatoria | Uso |
-|---|---:|---|
-| `GOOGLE_PLACES_API_KEY` | Si | Consultas a Google Places API |
-
-La clave debe tener habilitadas las APIs:
-
-- Places API (New)
-- Geocoding API, si se utiliza geocodificacion
-
-## Seguridad y datos
-
-- No subir `.env` al repositorio.
-- No subir `data/` ni `logs/` si contienen leads, emails, telefonos o URLs visitadas.
-- Mantener permisos restrictivos en `.env`: `chmod 600 .env`.
-- Revisar cuotas y costes en Google Cloud durante ejecuciones grandes.
-- Antes de importar a Mautic/Odoo, revisar y deduplicar resultados por organizacion y email.
-
-## Operativa recomendada
-
-Para pilotos:
+Instalar dependencias de test:
 
 ```bash
-./run.sh scripts/buscar.py --segmento campamentos_verano --ambito andalucia --max-paginas 1
+./venv/bin/pip install pytest
 ```
 
-Para ejecuciones completas, usar el valor por defecto de paginacion y revisar el coste estimado de Places API antes de lanzar segmentos grandes como `clubes_deportivos`.
-
-Los segmentos con mayor volumen pueden tardar bastante porque el extractor de emails aplica un rate limit conservador contra webs externas.
-
-## Verificacion rapida
-
-Comprobar que la clave responde:
+Ejecutar:
 
 ```bash
-./run.sh - <<'PY'
-import os, requests
-
-r = requests.post(
-    "https://places.googleapis.com/v1/places:searchText",
-    headers={
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": os.environ["GOOGLE_PLACES_API_KEY"],
-        "X-Goog-FieldMask": "places.displayName,places.formattedAddress",
-    },
-    json={"textQuery": "administrador de fincas Sevilla"},
-    timeout=20,
-)
-print(r.status_code)
-print(r.text[:500])
-r.raise_for_status()
-PY
+./venv/bin/python -m pytest tests/
 ```
+
+## Seguridad operativa
+
+- No subir `.env`, `/etc/ppmailing/ppmailing.env`, `data/`, `logs/` ni
+  `webui/instance/`.
+- Mantener permisos `600` en ficheros con claves y `700` en directorios
+  privados.
+- Usar siempre HTTPS en produccion.
+- Limitar cuotas y alertas de Google Cloud antes de ejecuciones amplias.
+- Revisar los CSV antes de integrarlos con Mautic/Odoo.
+- Mantener Gunicorn con un solo worker mientras la cola siga siendo interna.
 
 ## Mantenimiento
 
-Actualizar codigo:
+Logs del servicio:
 
 ```bash
-cd /opt/cgd/cgd_scraper_v04
-git pull
-./venv/bin/pip install -r requirements.txt
+journalctl -u ppmailing -f
 ```
 
-Limpiar salidas locales antiguas, si procede:
+Reiniciar:
 
 ```bash
-find data -type f -mtime +30 -delete
-find logs -type f -mtime +90 -delete
+systemctl restart ppmailing
 ```
 
-No borrar entregables pendientes de validacion sin confirmacion funcional.
+Renovar certificados:
+
+```bash
+certbot renew --dry-run
+```
+
+Backup minimo antes de actualizar:
+
+```bash
+tar -czf /opt/cgd/backups/ppmailing_$(date +%Y%m%d_%H%M%S).tar.gz \
+  --exclude venv \
+  --exclude .git \
+  /opt/cgd/cgd_scraper_v04
+```

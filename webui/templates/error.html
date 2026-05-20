@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Error {{ code }} · PPMailing{% endblock %}
+
+{% block content %}
+<div class="card empty">
+  <h1 style="font-size: 48px; margin: 0 0 8px;">{{ code }}</h1>
+  <p style="margin: 0 0 16px;">{{ message }}</p>
+  {% if user %}
+    <a href="{{ url_for('dashboard.index') }}" class="btn btn-secondary">Volver al inicio</a>
+  {% else %}
+    <a href="{{ url_for('auth.login') }}" class="btn btn-secondary">Iniciar sesión</a>
+  {% endif %}
+</div>
+{% endblock %}

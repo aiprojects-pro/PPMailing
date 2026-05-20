@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Push a Mailgun · PPMailing{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+  <h1>Push de leads a Mailgun</h1>
+  <a href="{{ url_for('leads.index') }}" class="muted" style="font-size: 13px;">← Volver a leads</a>
+</div>
+
+<p class="muted" style="font-size: 13px; margin-top: -8px; margin-bottom: 20px;">
+  Empuja los leads que pasen el filtro a una mailing list de Mailgun. Los
+  miembros se añaden con <code>upsert=true</code> (no se duplican si ya
+  están). Cada lead lleva sus vars: <code>place_id</code>,
+  <code>segmento</code>, <code>localidad</code>, <code>score</code>.
+</p>
+
+{% if not lists %}
+<div class="card">
+  <p>No hay mailing lists en tu cuenta de Mailgun (o no se han podido cargar).</p>
+  <p class="muted" style="font-size: 13px;">
+    Crea una desde el panel de Mailgun (<code>Sending → Mailing Lists</code>)
+    y vuelve aquí. La dirección tendrá la forma
+    <code>nombre@{{ '' }}tu-dominio-mailgun.com</code>.
+  </p>
+</div>
+{% else %}
+
+<div class="card">
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="section-title">1 · Lista de destino</div>
+    <div class="field">
+      <label for="list_address">Mailing list de Mailgun</label>
+      <select name="list_address" id="list_address" required>
+        <option value="">— Selecciona —</option>
+        {% for l in lists %}
+          <option value="{{ l.address }}">
+            {{ l.name or l.address }} ({{ l.members_count or 0 }} miembros)
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="section-title" style="margin-top: 20px;">2 · Filtros</div>
+
+    <div class="field-row-3">
+      <div class="field">
+        <label for="segmento">Segmento</label>
+        <input type="text" name="segmento" id="segmento"
+               value="{{ filtros.segmento or '' }}"
+               placeholder="(todos)">
+      </div>
+      <div class="field">
+        <label for="estado">Estado</label>
+        <select name="estado" id="estado">
+          <option value="" {% if not filtros.estado %}selected{% endif %}>— Cualquiera —</option>
+          <option value="nuevo" {% if filtros.estado == 'nuevo' %}selected{% endif %}>Nuevo</option>
+          <option value="contactado" {% if filtros.estado == 'contactado' %}selected{% endif %}>Contactado</option>
+          <option value="respondio" {% if filtros.estado == 'respondio' %}selected{% endif %}>Respondió</option>
+          <option value="descartado" {% if filtros.estado == 'descartado' %}selected{% endif %}>Descartado</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="email_status">Validación email</label>
+        <select name="email_status" id="email_status">
+          <option value="" {% if not filtros.email_status %}selected{% endif %}>— Cualquiera —</option>
+          <option value="mx_ok" {% if filtros.email_status == 'mx_ok' %}selected{% endif %}>MX OK</option>
+          <option value="verified" {% if filtros.email_status == 'verified' %}selected{% endif %}>Verified</option>
+          <option value="catch_all" {% if filtros.email_status == 'catch_all' %}selected{% endif %}>Catch-all</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="q">Buscar (nombre/email/localidad)</label>
+      <input type="text" name="q" id="q" value="{{ filtros.search or '' }}"
+             placeholder="(vacío = todos)">
+    </div>
+
+    <div class="field">
+      <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
+        <input type="checkbox" name="apto" value="1"
+               {% if filtros.apto_only %}checked{% endif %}>
+        Solo leads aptos para campaña
+      </label>
+      <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; margin-top: 8px;">
+        <input type="checkbox" name="exclude_contacted" value="1"
+               {% if filtros.exclude_contacted %}checked{% endif %}>
+        <span>
+          <strong>Excluir ya contactados</strong>
+          (recomendado: evita reenviar a leads en estado <code>contactado</code> o <code>respondio</code>)
+        </span>
+      </label>
+    </div>
+
+    <div class="card" style="background: var(--accent-bg); margin-top: 16px;">
+      <p style="margin: 0;">
+        <strong>Vista previa actual:</strong>
+        ~{{ total_preview }} leads con email pasarían los filtros.
+        <span class="muted" style="font-size: 12px;">
+          (la cifra se recalculará al pulsar "Push"; aquí es orientativa)
+        </span>
+      </p>
+    </div>
+
+    <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px;">
+      <a href="{{ url_for('leads.index') }}" class="btn btn-secondary">Cancelar</a>
+      <button type="submit" class="btn"
+              onclick="return confirm('¿Empujar los leads filtrados a la lista seleccionada?');">
+        Push a Mailgun
+      </button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+<div class="card" style="margin-top: 20px;">
+  <h2 style="margin-top: 0;">Webhook bidireccional</h2>
+  <p class="muted" style="font-size: 13px;">
+    Configura este URL en Mailgun (<code>Sending → Webhooks</code>) para
+    que actualice automáticamente el estado de los leads al recibir eventos:
+  </p>
+  <p class="mono" style="background: var(--code-bg, #f4f4f4); padding: 8px;
+                         border-radius: var(--radius); word-break: break-all;">
+    {{ request.url_root.rstrip('/') }}/webhooks/mailgun
+  </p>
+  <p class="muted" style="font-size: 12px;">
+    Eventos recomendados: <code>delivered</code>, <code>opened</code>,
+    <code>clicked</code>, <code>failed</code>, <code>complained</code>,
+    <code>unsubscribed</code>.
+    Las firmas HMAC se verifican usando la
+    <strong>Webhook Signing Key</strong> que configuraste en el panel admin.
+  </p>
+</div>
+{% endblock %}

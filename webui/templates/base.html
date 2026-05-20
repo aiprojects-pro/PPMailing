@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{% block title %}PPMailing{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<div class="app">
+  {% if user %}
+  <header class="topbar">
+    <a href="{{ url_for('dashboard.index') }}" class="brand">
+      <span class="brand-mark">PP</span>
+      <span>PPMailing</span>
+    </a>
+    <nav>
+      <a href="{{ url_for('dashboard.index') }}"
+         class="{% if request.endpoint == 'dashboard.index' %}active{% endif %}">
+         Búsquedas
+      </a>
+      <a href="{{ url_for('leads.index') }}"
+         class="{% if request.endpoint and request.endpoint.startswith('leads.') %}active{% endif %}">
+         Leads
+      </a>
+      <a href="{{ url_for('segments.index') }}"
+         class="{% if request.endpoint and request.endpoint.startswith('segments.') %}active{% endif %}">
+         Segmentos
+      </a>
+      <a href="{{ url_for('scheduling.index') }}"
+         class="{% if request.endpoint and request.endpoint.startswith('scheduling.') %}active{% endif %}">
+         Programadas
+      </a>
+      {% if mailgun_configured %}
+      <a href="{{ url_for('mailgun.push') }}"
+         class="{% if request.endpoint and request.endpoint.startswith('mailgun.') %}active{% endif %}">
+         Mailgun
+      </a>
+      {% endif %}
+      {% if user.role == 'admin' %}
+      <a href="{{ url_for('admin.index') }}"
+         class="{% if request.endpoint and request.endpoint.startswith('admin.') %}active{% endif %}">
+         Admin
+      </a>
+      {% endif %}
+      <span class="user-chip">
+        <span class="role {{ user.role }}">{{ user.role }}</span>
+        <a href="{{ url_for('auth.account') }}">{{ user.username }}</a>
+        ·
+        <form method="post" action="{{ url_for('auth.logout') }}"
+              class="inline-form" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="link-button">salir</button>
+        </form>
+      </span>
+    </nav>
+  </header>
+  {% endif %}
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+          <div class="flash {{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    PPMailing · interfaz web
+  </footer>
+</div>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

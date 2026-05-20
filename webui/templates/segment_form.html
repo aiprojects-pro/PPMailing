@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Nuevo segmento · PPMailing{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+  <h1>Nuevo segmento</h1>
+  <a href="{{ url_for('segments.index') }}" class="muted" style="font-size: 13px;">← Volver</a>
+</div>
+
+<div class="card">
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="field-row">
+      <div class="field">
+        <label for="id">Identificador interno</label>
+        <input type="text" id="id" name="id" required
+               pattern="[a-z][a-z0-9_]{1,49}"
+               value="{{ form.id or '' }}"
+               placeholder="ej. inmobiliarias_costa">
+        <div class="hint">snake_case, 2-50 caracteres, empieza por letra.</div>
+      </div>
+      <div class="field">
+        <label for="nombre_humano">Nombre legible</label>
+        <input type="text" id="nombre_humano" name="nombre_humano" required
+               maxlength="200"
+               value="{{ form.nombre_humano or '' }}"
+               placeholder="ej. Inmobiliarias de costa">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="producto_cgd">Producto que se le ofrece</label>
+      <input type="text" id="producto_cgd" name="producto_cgd"
+             maxlength="500"
+             value="{{ form.producto_cgd or '' }}"
+             placeholder="ej. Formación bonificable + LMS">
+      <div class="hint">Solo informativo, sirve de referencia comercial.</div>
+    </div>
+
+    <div class="field">
+      <label for="queries">Queries de búsqueda (una por línea, máx. 100)</label>
+      <textarea id="queries" name="queries" required rows="6"
+                placeholder="inmobiliaria&#10;agencia inmobiliaria&#10;venta de pisos&#10;...">{{ form.queries or '' }}</textarea>
+      <div class="hint">
+        Cada query se combinará con cada ciudad del ámbito elegido.
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label for="palabras_clave_web">Palabras clave en la web (suben score)</label>
+        <textarea id="palabras_clave_web" name="palabras_clave_web" rows="5"
+                  placeholder="contacto comercial&#10;captación&#10;valoración inmuebles">{{ form.palabras_clave_web or '' }}</textarea>
+      </div>
+      <div class="field">
+        <label for="palabras_descarte">Palabras de descarte (eliminan el lead)</label>
+        <textarea id="palabras_descarte" name="palabras_descarte" rows="5"
+                  placeholder="solo alquiler vacacional&#10;exclusivo lujo">{{ form.palabras_descarte or '' }}</textarea>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
+      <a href="{{ url_for('segments.index') }}" class="btn btn-secondary">Cancelar</a>
+      <button type="submit" class="btn">Crear segmento</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

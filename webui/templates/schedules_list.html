@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Búsquedas programadas · PPMailing{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+  <h1>Búsquedas programadas</h1>
+  <div class="actions">
+    <a href="{{ url_for('scheduling.new') }}" class="btn">+ Nueva programación</a>
+  </div>
+</div>
+
+<p class="muted" style="margin-top: -8px; margin-bottom: 24px; font-size: 13px;">
+  Las búsquedas programadas se ejecutan automáticamente en el momento configurado.
+  Respetan el presupuesto mensual del usuario que las creó. Si fallan 5 veces
+  seguidas se desactivan solas (puedes reactivarlas desde aquí).
+</p>
+
+{% if schedules %}
+<div class="table-card">
+  <table>
+    <thead>
+      <tr>
+        <th>Nombre</th>
+        <th>Segmento / ámbito</th>
+        <th>Programación</th>
+        <th>Próxima</th>
+        <th>Última</th>
+        {% if user.role == 'admin' %}<th>Usuario</th>{% endif %}
+        <th>Estado</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in schedules %}
+      <tr>
+        <td>
+          <strong>{{ s.name }}</strong>
+          {% if s.failure_count > 0 %}
+            <div class="muted" style="font-size: 11px; color: var(--warning);">
+              {{ s.failure_count }} fallos: {{ s.last_error[:60] }}{% if s.last_error|length > 60 %}…{% endif %}
+            </div>
+          {% endif %}
+        </td>
+        <td>
+          <span class="mono" style="font-size: 12px;">{{ s.segmento }}</span>
+          <div class="muted" style="font-size: 11px;">
+            {% if s.ambito_kind == 'radius' %}
+              ⊙ radio
+            {% else %}
+              {{ s.ambito }}
+            {% endif %}
+            · {{ s.max_paginas }} pág
+          </div>
+        </td>
+        <td style="font-size: 12px;">
+          {% if s.schedule_kind == 'cron' %}
+            <code style="font-size: 11px;">{{ s.cron_expr }}</code>
+            <div class="muted" style="font-size: 10px;">cron</div>
+          {% else %}
+            cada {{ (s.interval_minutes // 1440) }} día(s)
+            <div class="muted" style="font-size: 10px;">simple</div>
+          {% endif %}
+        </td>
+        <td class="muted" style="font-size: 12px;">
+          {% if s.enabled %}
+            {{ s.next_run_at.replace('T', ' ')[:16] }}
+          {% else %}
+            <em>pausada</em>
+          {% endif %}
+        </td>
+        <td class="muted" style="font-size: 12px;">
+          {% if s.last_run_at %}
+            {{ s.last_run_at.replace('T', ' ')[:16] }}
+            {% if s.last_job_id %}
+              <div>
+                <a href="{{ url_for('jobs.detail', job_id=s.last_job_id) }}"
+                   class="mono" style="font-size: 10px;">{{ s.last_job_id }}</a>
+              </div>
+            {% endif %}
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        {% if user.role == 'admin' %}
+        <td>{{ s.username or '—' }}</td>
+        {% endif %}
+        <td>
+          {% if s.enabled %}
+            <span class="badge status-running">activa</span>
+          {% else %}
+            <span class="badge">pausada</span>
+          {% endif %}
+        </td>
+        <td style="text-align: right; white-space: nowrap;">
+          <form method="post" action="{{ url_for('scheduling.toggle', schedule_id=s.id) }}"
+                class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="enabled" value="{{ '0' if s.enabled else '1' }}">
+            <button type="submit" class="btn btn-sm btn-secondary">
+              {% if s.enabled %}Pausar{% else %}Activar{% endif %}
+            </button>
+          </form>
+          <form method="post" action="{{ url_for('scheduling.delete', schedule_id=s.id) }}"
+                class="inline-form"
+                onsubmit="return confirm('¿Eliminar la programación {{ s.name }}?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-danger">×</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card empty">
+  <div class="empty-icon">⏱</div>
+  <p>No tienes búsquedas programadas.</p>
+  <a href="{{ url_for('scheduling.new') }}" class="btn btn-secondary" style="margin-top: 12px;">
+    Crear la primera
+  </a>
+</div>
+{% endif %}
+{% endblock %}

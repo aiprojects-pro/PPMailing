@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+{% block title %}{{ lead.nombre or 'Lead' }} · PPMailing{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+  <div>
+    <h1 style="margin-bottom: 4px;">{{ lead.nombre or '(sin nombre)' }}</h1>
+    <div class="muted mono" style="font-size: 12px;">{{ lead.place_id }}</div>
+  </div>
+  <a href="{{ url_for('leads.index') }}" class="muted" style="font-size: 13px;">← Volver al listado</a>
+</div>
+
+<div class="stat-grid">
+  <div class="stat">
+    <div class="label">Score</div>
+    <div class="value">{{ lead.score }}
+      {% if lead.apto_campanya %}
+        <span class="muted" style="font-size: 12px;">apto</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="stat">
+    <div class="label">Veces visto</div>
+    <div class="value">{{ lead.times_seen }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Estado</div>
+    <div class="value" style="font-size: 14px;">
+      <span class="badge status-{{ 'done' if lead.estado == 'respondio' else ('running' if lead.estado == 'contactado' else ('error' if lead.estado == 'descartado' else 'pending')) }}">
+        {% if lead.estado == 'nuevo' %}Nuevo
+        {% elif lead.estado == 'contactado' %}Contactado
+        {% elif lead.estado == 'respondio' %}Respondió
+        {% elif lead.estado == 'descartado' %}Descartado
+        {% endif %}
+      </span>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="label">Email validación</div>
+    <div class="value" style="font-size: 14px;">
+      {% if lead.email_status == 'mx_ok' %}
+        <span style="color: #155724;">✓ MX OK</span>
+      {% elif lead.email_status == 'mx_fail' %}
+        <span style="color: #721c24;">✗ MX fail</span>
+      {% elif lead.email_status == 'verified' %}
+        <span style="color: #155724;">✓ Verified</span>
+      {% elif lead.email_status == 'catch_all' %}
+        <span style="color: #856404;">⚠ Catch-all</span>
+      {% elif lead.email_status == 'do_not_send' %}
+        <span style="color: #721c24;">✗ Do not send</span>
+      {% elif lead.email_status == 'invalid' %}
+        <span style="color: #721c24;">✗ Inválido</span>
+      {% elif lead.email_status == 'unknown' %}
+        <span class="muted">? Unknown</span>
+      {% else %}
+        <span class="muted">Sin verificar</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Datos del negocio</h2>
+  <table>
+    <tbody>
+      <tr>
+        <td class="muted" style="width: 180px;">Nombre</td>
+        <td><strong>{{ lead.nombre or '—' }}</strong></td>
+      </tr>
+      <tr>
+        <td class="muted">Email</td>
+        <td>
+          {% if lead.email %}
+            <span class="mono">{{ lead.email }}</span>
+            {% if lead.email_checked_at %}
+              <div class="muted" style="font-size: 11px;">
+                validado ({{ lead.email_check_method or 'mx' }}):
+                {{ lead.email_checked_at.replace('T', ' ')[:16] }}
+              </div>
+            {% endif %}
+            <form method="post" action="{{ url_for('leads.validate_email_route', place_id=lead.place_id) }}"
+                  class="inline-form" style="margin-top: 6px; display: flex; gap: 6px; align-items: center;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <select name="method" style="font-size: 12px; padding: 2px 6px;">
+                <option value="mx">MX (gratis, rápido)</option>
+                <option value="smtp">SMTP handshake</option>
+                <option value="mailgun">Mailgun (de pago, fiable)</option>
+              </select>
+              <button type="submit" class="btn btn-sm btn-secondary">Validar</button>
+            </form>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td class="muted">Teléfono</td>
+        <td><span class="mono">{{ lead.telefono or '—' }}</span></td>
+      </tr>
+      <tr>
+        <td class="muted">Web</td>
+        <td>
+          {% if lead.web %}
+            <a href="{{ lead.web }}" target="_blank" rel="noopener noreferrer" class="mono">{{ lead.web }}</a>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td class="muted">Dirección</td>
+        <td>{{ lead.direccion or '—' }}</td>
+      </tr>
+      <tr>
+        <td class="muted">Localidad</td>
+        <td>
+          {{ lead.localidad or '—' }}
+          {% if lead.provincia %}<span class="muted"> · {{ lead.provincia }}</span>{% endif %}
+          {% if lead.ccaa %}<span class="muted"> · {{ lead.ccaa }}</span>{% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td class="muted">Segmento</td>
+        <td><span class="mono">{{ lead.segmento }}</span></td>
+      </tr>
+      {% if lead.rating %}
+      <tr>
+        <td class="muted">Rating</td>
+        <td>{{ lead.rating }} ★ ({{ lead.num_resenas or 0 }} reseñas)</td>
+      </tr>
+      {% endif %}
+      <tr>
+        <td class="muted">Primera vez visto</td>
+        <td class="mono" style="font-size: 12px;">{{ lead.first_seen_at }}</td>
+      </tr>
+      <tr>
+        <td class="muted">Última vez visto</td>
+        <td class="mono" style="font-size: 12px;">{{ lead.last_seen_at }}</td>
+      </tr>
+      {% if lead.fecha_ultimo_contacto %}
+      <tr>
+        <td class="muted">Último contacto</td>
+        <td class="mono" style="font-size: 12px;">{{ lead.fecha_ultimo_contacto }}</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Redes sociales</h2>
+  {% set socials = [
+    ('LinkedIn', lead.linkedin_url),
+    ('Instagram', lead.instagram_url),
+    ('Facebook', lead.facebook_url),
+    ('Twitter/X', lead.twitter_url),
+    ('YouTube', lead.youtube_url),
+    ('TikTok', lead.tiktok_url),
+  ] %}
+  {% set found = socials | selectattr('1') | list %}
+  {% if found %}
+    <table>
+      <tbody>
+        {% for name, url in socials %}
+          {% if url %}
+          <tr>
+            <td class="muted" style="width: 120px;">{{ name }}</td>
+            <td>
+              <a href="{{ url }}" target="_blank" rel="noopener noreferrer"
+                 class="mono" style="font-size: 12px;">{{ url }}</a>
+            </td>
+          </tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted" style="font-size: 13px;">
+      {% if lead.social_extracted_at %}
+        Sin redes sociales detectadas en la web del negocio.
+      {% else %}
+        Aún no se han buscado redes sociales.
+      {% endif %}
+    </p>
+  {% endif %}
+  {% if lead.web %}
+    <form method="post" action="{{ url_for('leads.extract_social_route', place_id=lead.place_id) }}"
+          class="inline-form" style="margin-top: 12px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-sm btn-secondary">
+        {% if lead.social_extracted_at %}Re-extraer redes{% else %}Extraer redes ahora{% endif %}
+      </button>
+      {% if lead.social_extracted_at %}
+      <span class="muted" style="font-size: 11px; margin-left: 8px;">
+        última: {{ lead.social_extracted_at.replace('T', ' ')[:16] }}
+      </span>
+      {% endif %}
+    </form>
+  {% else %}
+    <p class="muted" style="font-size: 12px;">
+      <em>Este lead no tiene web — no se pueden extraer redes.</em>
+    </p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Estado y notas</h2>
+  <form method="post" action="{{ url_for('leads.update_state', place_id=lead.place_id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <label for="estado">Estado del lead</label>
+      <select name="estado" id="estado">
+        <option value="nuevo" {% if lead.estado == 'nuevo' %}selected{% endif %}>Nuevo</option>
+        <option value="contactado" {% if lead.estado == 'contactado' %}selected{% endif %}>Contactado</option>
+        <option value="respondio" {% if lead.estado == 'respondio' %}selected{% endif %}>Respondió</option>
+        <option value="descartado" {% if lead.estado == 'descartado' %}selected{% endif %}>Descartado</option>
+      </select>
+      <div class="hint">
+        Al marcar "Contactado" se registra la fecha actual como último contacto.
+      </div>
+    </div>
+    <div class="field">
+      <label for="notas">Notas internas</label>
+      <textarea id="notas" name="notas" rows="4"
+                placeholder="Ej. 'Llamé al gerente, pidió email de propuesta', 'Devolvió, no interesado'">{{ lead.notas or '' }}</textarea>
+    </div>
+    <button type="submit" class="btn">Guardar cambios</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Histórico de búsquedas donde apareció</h2>
+  {% if history %}
+  <table>
+    <thead>
+      <tr>
+        <th>Visto</th>
+        <th>Segmento / ámbito</th>
+        <th>Lanzado por</th>
+        <th>Job</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for h in history %}
+      <tr>
+        <td class="mono" style="font-size: 12px;">{{ h.seen_at.replace('T', ' ')[:16] }}</td>
+        <td>
+          {% if h.segmento %}
+            <span class="mono">{{ h.segmento }}</span>
+            <span class="muted">/ {{ h.ambito }}</span>
+          {% else %}
+            <span class="muted">(job eliminado)</span>
+          {% endif %}
+        </td>
+        <td class="muted">{{ h.username or '—' }}</td>
+        <td>
+          {% if h.segmento %}
+          <a href="{{ url_for('jobs.detail', job_id=h.job_id) }}"
+             class="btn btn-sm btn-secondary">Ver job</a>
+          {% else %}
+            <span class="mono muted" style="font-size: 11px;">{{ h.job_id }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No hay histórico (esto debería ser imposible).</p>
+  {% endif %}
+</div>
+
+{% endblock %}

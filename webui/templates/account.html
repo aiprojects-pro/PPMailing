@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Mi cuenta · PPMailing{% endblock %}
+
+{% block content %}
+<h1>Mi cuenta</h1>
+
+<div class="card">
+  <h2>Datos</h2>
+  <table>
+    <tbody>
+      <tr>
+        <td class="muted" style="width: 200px;">Usuario</td>
+        <td><strong>{{ user.username }}</strong></td>
+      </tr>
+      <tr>
+        <td class="muted">Rol</td>
+        <td><span class="badge">{{ user.role }}</span></td>
+      </tr>
+      <tr>
+        <td class="muted">Alta</td>
+        <td class="mono">{{ user.created_at }}</td>
+      </tr>
+      <tr>
+        <td class="muted">Presupuesto mensual</td>
+        <td class="mono">
+          {% if user.budget_eur_monthly > 0 %}
+            {{ "%.2f"|format(user.budget_eur_monthly) }} €
+          {% else %}
+            sin límite
+          {% endif %}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Cambiar contraseña</h2>
+  <p class="muted" style="font-size: 13px;">
+    Al cambiar tu contraseña se cerrarán las sesiones abiertas en otros
+    dispositivos.
+  </p>
+  <form method="post" style="max-width: 420px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <label for="current_password">Contraseña actual</label>
+      <input type="password" id="current_password" name="current_password"
+             required autocomplete="current-password">
+    </div>
+    <div class="field">
+      <label for="new_password">Nueva contraseña (mín. 8)</label>
+      <input type="password" id="new_password" name="new_password"
+             required minlength="8" autocomplete="new-password">
+    </div>
+    <div class="field">
+      <label for="confirm_password">Confirma la nueva contraseña</label>
+      <input type="password" id="confirm_password" name="confirm_password"
+             required minlength="8" autocomplete="new-password">
+    </div>
+    <button type="submit" class="btn">Cambiar contraseña</button>
+  </form>
+</div>
+{% endblock %}

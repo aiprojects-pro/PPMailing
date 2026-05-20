@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% block title %}Búsqueda {{ job.id }} · PPMailing{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+  <div>
+    <h1 style="margin-bottom: 4px;">
+      {{ job.segmento }}
+      <span class="muted mono" style="font-weight: 400; font-size: 14px;">/ {{ job.ambito }}</span>
+    </h1>
+    <div class="muted" style="font-size: 12px;">
+      <span class="mono">{{ job.id }}</span> ·
+      lanzado por <strong>{{ job.username }}</strong> el
+      {{ job.queued_at.replace('T', ' ')[:16] }}
+    </div>
+  </div>
+  <a href="{{ url_for('dashboard.index') }}" class="muted" style="font-size: 13px;">← Volver</a>
+</div>
+
+<div class="card">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+    <div>
+      <span class="badge status-{{ job.status }}" id="statusBadge">
+        <span class="badge-dot"></span>
+        <span id="statusLabel">
+          {% if job.status == 'pending' %}En cola
+          {% elif job.status == 'running' %}En curso
+          {% elif job.status == 'done' %}Completada
+          {% elif job.status == 'error' %}Error
+          {% elif job.status == 'cancelled' %}Cancelada
+          {% else %}{{ job.status }}{% endif %}
+        </span>
+      </span>
+      <span class="muted" id="stepLabel" style="margin-left: 8px; font-size: 13px;">
+        {{ job.step }}
+      </span>
+      {% if queue_pos is not none and queue_pos >= 0 %}
+        <span class="muted" id="queuePos" style="margin-left: 12px; font-size: 13px;">
+          {% if queue_pos == 0 %}siguiente en la cola
+          {% else %}#{{ queue_pos + 1 }} en la cola{% endif %}
+        </span>
+      {% endif %}
+    </div>
+    <div class="muted mono" id="progressText" style="font-size: 13px;">
+      {{ job.progress }}%
+    </div>
+  </div>
+  <div class="progress">
+    <div class="progress-fill {% if job.status == 'error' %}error{% elif job.status == 'done' %}done{% endif %}"
+         id="progressFill" style="width: {{ job.progress }}%;"></div>
+  </div>
+  <p class="muted" id="messageText" style="margin: 12px 0 0; font-size: 13px;">
+    {{ job.message }}
+  </p>
+</div>
+
+<div class="stat-grid" id="statsRow">
+  <div class="stat">
+    <div class="label">Coste estimado</div>
+    <div class="value">{{ "%.2f"|format(job.estimated_cost_eur or 0) }} €</div>
+  </div>
+  <div class="stat">
+    <div class="label">Total leads</div>
+    <div class="value {% if job.status != 'done' %}muted{% endif %}" id="statTotal">
+      {{ job.total_leads or '—' }}
+    </div>
+  </div>
+  <div class="stat">
+    <div class="label">Aptos para campaña</div>
+    <div class="value {% if job.status != 'done' %}muted{% endif %}" id="statAptos">
+      {{ job.aptos_leads or '—' }}
+    </div>
+  </div>
+  <div class="stat">
+    <div class="label">Páginas / query</div>
+    <div class="value">{{ job.max_paginas }}</div>
+  </div>
+</div>
+
+<div class="card" id="downloadsCard"
+     style="{% if job.status != 'done' %}display:none;{% endif %}">
+  <h2>Descargas</h2>
+  <p class="muted" style="font-size: 13px; margin-bottom: 12px;">
+    Los archivos generados son exclusivos de esta búsqueda (no se mezclan
+    con los de otras búsquedas del mismo segmento/ámbito).
+  </p>
+  <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="downloadButtons">
+    {% if job.csv_filename %}
+      <a href="{{ url_for('jobs.download', job_id=job.id, which='csv') }}"
+         class="btn">↓ CSV final de leads</a>
+    {% endif %}
+    {% if job.enriched_filename %}
+      <a href="{{ url_for('jobs.download', job_id=job.id, which='enriched') }}"
+         class="btn btn-secondary">↓ JSON enriquecido</a>
+    {% endif %}
+    {% if job.json_filename %}
+      <a href="{{ url_for('jobs.download', job_id=job.id, which='json') }}"
+         class="btn btn-secondary">↓ JSON bruto (places)</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+    <h2 style="margin: 0;">Log de ejecución</h2>
+    <span class="muted" style="font-size: 12px;" id="autoIndicator">
+      <span id="autoText">actualizando...</span>
+    </span>
+  </div>
+  <pre class="log-viewer" id="logViewer">Cargando log...</pre>
+</div>
+
+{% if job.status in ('done', 'error', 'cancelled') %}
+<div class="card" style="border-color: var(--danger-border, #f5c6cb);">
+  <h2 style="margin: 0 0 8px;">Eliminar esta búsqueda</h2>
+  <p class="muted" style="font-size: 13px; margin: 0 0 12px;">
+    Borrará permanentemente la búsqueda de la base de datos, junto con el
+    log de ejecución y todos los archivos descargables. No se puede deshacer.
+  </p>
+  <form method="post" action="{{ url_for('jobs.delete', job_id=job.id) }}"
+        onsubmit="return confirm('¿Eliminar permanentemente esta búsqueda? '
+                + 'Se borrarán el log y los archivos generados.');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn btn-danger btn-sm">
+      Eliminar permanentemente
+    </button>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const jobId = "{{ job.id }}";
+  const apiUrl = "{{ url_for('jobs.api_status', job_id=job.id) }}";
+  const baseDownloadUrl = "/download/{{ job.id }}/";
+  const log = document.getElementById('logViewer');
+  const statusBadge = document.getElementById('statusBadge');
+  const statusLabel = document.getElementById('statusLabel');
+  const stepLabel = document.getElementById('stepLabel');
+  const queuePos = document.getElementById('queuePos');
+  const messageText = document.getElementById('messageText');
+  const progressFill = document.getElementById('progressFill');
+  const progressText = document.getElementById('progressText');
+  const statTotal = document.getElementById('statTotal');
+  const statAptos = document.getElementById('statAptos');
+  const downloadsCard = document.getElementById('downloadsCard');
+  const downloadButtons = document.getElementById('downloadButtons');
+  const autoText = document.getElementById('autoText');
+
+  const STATUS_LABELS = {
+    pending: 'En cola',
+    running: 'En curso',
+    done: 'Completada',
+    error: 'Error',
+    cancelled: 'Cancelada',
+  };
+
+  let isTerminal = {{ 'true' if job.status in ('done', 'error', 'cancelled') else 'false' }};
+  let pollInterval = 2000;       // arranca cada 2s
+  const MAX_INTERVAL = 30000;    // backoff hasta 30s si hay errores
+  let consecutiveErrors = 0;
+  let timeoutId = null;
+
+  function update(data) {
+    statusBadge.className = 'badge status-' + data.status;
+    statusLabel.textContent = STATUS_LABELS[data.status] || data.status;
+    stepLabel.textContent = data.step;
+    messageText.textContent = data.message;
+    progressFill.style.width = data.progress + '%';
+    progressFill.className = 'progress-fill' +
+      (data.status === 'error' ? ' error' : (data.status === 'done' ? ' done' : ''));
+    progressText.textContent = data.progress + '%';
+
+    if (queuePos) {
+      if (data.queue_position !== null && data.queue_position !== undefined) {
+        queuePos.textContent = data.queue_position === 0
+          ? 'siguiente en la cola'
+          : '#' + (data.queue_position + 1) + ' en la cola';
+        queuePos.style.display = '';
+      } else {
+        queuePos.style.display = 'none';
+      }
+    }
+
+    if (data.status === 'done') {
+      statTotal.textContent = data.total_leads;
+      statTotal.classList.remove('muted');
+      statAptos.textContent = data.aptos_leads;
+      statAptos.classList.remove('muted');
+      downloadsCard.style.display = '';
+      // Render buttons si no existen aún
+      if (downloadButtons.children.length === 0) {
+        const buttons = [
+          { which: 'csv', label: '↓ CSV final de leads', cls: 'btn', show: data.has_csv },
+          { which: 'enriched', label: '↓ JSON enriquecido', cls: 'btn btn-secondary', show: data.has_enriched },
+          { which: 'json', label: '↓ JSON bruto', cls: 'btn btn-secondary', show: data.has_json },
+        ];
+        buttons.forEach(b => {
+          if (!b.show) return;
+          const a = document.createElement('a');
+          a.href = baseDownloadUrl + b.which;
+          a.className = b.cls;
+          a.textContent = b.label;
+          downloadButtons.appendChild(a);
+        });
+      }
+    }
+
+    if (data.log && data.log !== log.textContent) {
+      const atBottom = log.scrollHeight - log.clientHeight - log.scrollTop < 50;
+      log.textContent = data.log;
+      if (atBottom) log.scrollTop = log.scrollHeight;
+    }
+
+    if ((data.status === 'done' || data.status === 'error' || data.status === 'cancelled') && !isTerminal) {
+      isTerminal = true;
+      autoText.textContent = 'finalizado';
+    }
+  }
+
+  async function tick() {
+    // Pausa si la pestaña no está visible
+    if (document.hidden) {
+      schedule();
+      return;
+    }
+    try {
+      const r = await fetch(apiUrl, { credentials: 'same-origin' });
+      if (!r.ok) throw new Error('http ' + r.status);
+      const data = await r.json();
+      update(data);
+      consecutiveErrors = 0;
+      pollInterval = 2000;
+    } catch (e) {
+      consecutiveErrors++;
+      // Backoff exponencial hasta 30s
+      pollInterval = Math.min(pollInterval * 2, MAX_INTERVAL);
+    }
+    if (!isTerminal) schedule();
+    else autoText.textContent = 'finalizado';
+  }
+
+  function schedule() {
+    timeoutId = setTimeout(tick, pollInterval);
+  }
+
+  // Si la pestaña vuelve a ser visible y aún hay polling activo, refrescar
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && !isTerminal && timeoutId) {
+      clearTimeout(timeoutId);
+      tick();
+    }
+  });
+
+  tick();
+})();
+</script>
+{% endblock %}

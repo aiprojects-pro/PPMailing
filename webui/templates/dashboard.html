@@ -1,0 +1,486 @@
+{% extends "base.html" %}
+{% block title %}Búsquedas · PPMailing{% endblock %}
+
+{% block content %}
+
+{% if not api_key_ok %}
+<div class="flash error">
+  <strong>Atención:</strong> no hay clave de Google Places configurada.
+  {% if user.role == 'admin' %}
+    Configúrala desde <a href="{{ url_for('admin.index') }}">Admin</a>.
+  {% else %}
+    Avisa al administrador para que la configure.
+  {% endif %}
+</div>
+{% endif %}
+
+{% if monthly_budget > 0 %}
+<div class="card" style="margin-bottom: 16px;">
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+      <div class="section-title" style="margin: 0 0 4px;">Presupuesto este mes</div>
+      <div class="mono" style="font-size: 13px;">
+        {{ "%.2f"|format(monthly_spent) }} € de {{ "%.2f"|format(monthly_budget) }} €
+        ({{ "%.0f"|format(100 * monthly_spent / monthly_budget) }}%)
+      </div>
+    </div>
+    <div style="flex: 1; max-width: 300px; margin-left: 24px;">
+      <div class="progress">
+        {% set pct = (100 * monthly_spent / monthly_budget)|round %}
+        <div class="progress-fill {% if pct >= 90 %}error{% elif pct >= 70 %}warn{% endif %}"
+             style="width: {{ pct if pct < 100 else 100 }}%;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">
+    <h2>Nueva búsqueda</h2>
+    <a href="{{ url_for('segments.index') }}" class="muted" style="font-size: 13px;">
+      Gestionar segmentos →
+    </a>
+  </div>
+
+  <div style="display: flex; gap: 4px; border-bottom: 2px solid var(--border); margin-bottom: 20px;">
+    <button type="button" class="tab-btn active" data-tab="ciudad"
+            style="background: none; border: none; padding: 10px 16px; font-weight: 600;
+                   border-bottom: 3px solid transparent; margin-bottom: -2px; cursor: pointer;">
+      Por ciudad
+    </button>
+    <button type="button" class="tab-btn" data-tab="radio"
+            style="background: none; border: none; padding: 10px 16px; font-weight: 600;
+                   border-bottom: 3px solid transparent; margin-bottom: -2px; cursor: pointer;">
+      Por radio geográfico
+    </button>
+  </div>
+
+  <!-- Formulario por ciudad -->
+  <form method="post" action="{{ url_for('jobs.new_job') }}" id="newJobForm" data-tab-panel="ciudad">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="section-title">1 · Selecciona segmento</div>
+    <div class="segment-grid" id="segmentGrid">
+      {% for sid, seg in segments.items() %}
+        <label class="segment-card" data-id="{{ sid }}"
+               data-num-queries="{{ seg.queries|length }}">
+          <input type="radio" name="segmento" value="{{ sid }}" style="display:none" required>
+          {% if seg.builtin %}
+            <span class="builtin-tag">sistema</span>
+          {% else %}
+            <span class="custom-tag">propio</span>
+          {% endif %}
+          <h3>{{ seg.nombre_humano }}</h3>
+          <div class="seg-id">{{ sid }}</div>
+          <div class="seg-product">{{ seg.producto_cgd or '—' }}</div>
+          <div class="muted" style="font-size: 11px; margin-top: 6px;">
+            {{ seg.queries|length }} queries
+          </div>
+        </label>
+      {% endfor %}
+    </div>
+
+    <div class="section-title" style="margin-top: 28px;">2 · Configura el alcance</div>
+    <div class="field-row-3">
+      <div class="field">
+        <label for="ambito">Ámbito geográfico</label>
+        <select name="ambito" id="ambito">
+          {% for a in ambitos %}
+            <option value="{{ a }}" data-num-ciudades="{{ ambitos_info[a].num_ciudades }}"
+                    {% if a == 'espana' %}selected{% endif %}>
+              {{ a }} ({{ ambitos_info[a].num_ciudades }} ciudades)
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="max_paginas">Páginas por query</label>
+        <select name="max_paginas" id="max_paginas">
+          <option value="1">1 (20/query) — barato</option>
+          <option value="2">2 (40/query)</option>
+          <option value="3" selected>3 (60/query) — máximo</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Estimación</label>
+        <div class="estimate-box" id="estimateBox">
+          <div class="muted" style="font-size: 13px;">Selecciona un segmento</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="confirmHighCost" style="display: none; margin-bottom: 12px;">
+      <label style="display: flex; align-items: flex-start; gap: 8px; font-weight: normal;
+                    background: var(--warning-bg); border: 1px solid var(--warning);
+                    border-radius: var(--radius); padding: 10px;">
+        <input type="checkbox" name="confirm_high_cost" value="1" style="margin-top: 2px;">
+        <span>
+          <strong>Confirmo</strong> que entiendo que esta búsqueda puede costar
+          una cantidad significativa de la cuota de Google Places.
+        </span>
+      </label>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end;">
+      <button type="submit" class="btn" id="submitBtn"
+              {% if not api_key_ok %}disabled{% endif %}>
+        Lanzar búsqueda
+      </button>
+    </div>
+  </form>
+
+  <!-- Formulario por radio -->
+  <form method="post" action="{{ url_for('jobs.new_radius_job') }}" id="newRadiusForm"
+        data-tab-panel="radio" style="display: none;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="section-title">1 · Selecciona segmento</div>
+    <div class="segment-grid" id="segmentGridR">
+      {% for sid, seg in segments.items() %}
+        <label class="segment-card" data-id="{{ sid }}"
+               data-num-queries="{{ seg.queries|length }}">
+          <input type="radio" name="segmento" value="{{ sid }}" style="display:none" required>
+          {% if seg.builtin %}
+            <span class="builtin-tag">sistema</span>
+          {% else %}
+            <span class="custom-tag">propio</span>
+          {% endif %}
+          <h3>{{ seg.nombre_humano }}</h3>
+          <div class="seg-id">{{ sid }}</div>
+          <div class="seg-product">{{ seg.producto_cgd or '—' }}</div>
+          <div class="muted" style="font-size: 11px; margin-top: 6px;">
+            {{ seg.queries|length }} queries
+          </div>
+        </label>
+      {% endfor %}
+    </div>
+
+    <div class="section-title" style="margin-top: 28px;">2 · Define los puntos de búsqueda</div>
+    <p class="muted" style="font-size: 13px; margin-top: -6px; margin-bottom: 12px;">
+      Cada punto es un círculo (lat, lng, radio en metros). Puedes añadir hasta 20.
+      Las queries del segmento se aplican a cada punto.
+      <strong>Tip:</strong> en Google Maps, clic derecho sobre un punto te da las coordenadas.
+    </p>
+    <div id="pointsContainer"></div>
+    <button type="button" id="addPointBtn" class="btn btn-sm btn-secondary"
+            style="margin-bottom: 16px;">+ Añadir punto</button>
+    <input type="hidden" name="points_json" id="pointsJsonInput" value="">
+
+    <div class="section-title" style="margin-top: 16px;">3 · Configuración</div>
+    <div class="field-row-3">
+      <div class="field">
+        <label for="max_paginas_r">Páginas por query</label>
+        <select name="max_paginas" id="max_paginas_r">
+          <option value="1">1 (20/query) — barato</option>
+          <option value="2">2 (40/query)</option>
+          <option value="3" selected>3 (60/query) — máximo</option>
+        </select>
+      </div>
+      <div class="field" style="grid-column: span 2;">
+        <label>Estimación</label>
+        <div class="estimate-box" id="estimateBoxR">
+          <div class="muted" style="font-size: 13px;">Selecciona segmento y añade puntos</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="confirmHighCostR" style="display: none; margin-bottom: 12px;">
+      <label style="display: flex; align-items: flex-start; gap: 8px; font-weight: normal;
+                    background: var(--warning-bg); border: 1px solid var(--warning);
+                    border-radius: var(--radius); padding: 10px;">
+        <input type="checkbox" name="confirm_high_cost" value="1" style="margin-top: 2px;">
+        <span>
+          <strong>Confirmo</strong> que entiendo el coste estimado de esta búsqueda.
+        </span>
+      </label>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end;">
+      <button type="submit" class="btn" id="submitBtnR"
+              {% if not api_key_ok %}disabled{% endif %}>
+        Lanzar búsqueda por radio
+      </button>
+    </div>
+  </form>
+</div>
+
+<div class="toolbar">
+  <h2 style="margin: 0;">
+    Últimas búsquedas
+    {% if user.role == 'admin' %}<span class="muted" style="font-size: 12px; font-weight: 400;">(todos los usuarios)</span>{% endif %}
+  </h2>
+</div>
+
+{% if jobs %}
+<div class="table-card">
+  <table>
+    <thead>
+      <tr>
+        <th>Estado</th>
+        <th>Segmento</th>
+        <th>Ámbito</th>
+        {% if user.role == 'admin' %}<th>Usuario</th>{% endif %}
+        <th>Lanzado</th>
+        <th>Coste</th>
+        <th>Leads</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for j in jobs %}
+      <tr>
+        <td>
+          <span class="badge status-{{ j.status }}">
+            <span class="badge-dot"></span>
+            {% if j.status == 'pending' %}En cola
+            {% elif j.status == 'running' %}En curso
+            {% elif j.status == 'done' %}Completada
+            {% elif j.status == 'error' %}Error
+            {% elif j.status == 'cancelled' %}Cancelada
+            {% else %}{{ j.status }}{% endif %}
+          </span>
+        </td>
+        <td>
+          <div>{{ segments[j.segmento].nombre_humano if j.segmento in segments else j.segmento }}</div>
+          <div class="mono muted">{{ j.segmento }}</div>
+        </td>
+        <td><span class="mono">{{ j.ambito }}</span></td>
+        {% if user.role == 'admin' %}<td>{{ j.username }}</td>{% endif %}
+        <td class="muted">{{ j.queued_at.replace('T', ' ')[:16] }}</td>
+        <td>
+          {% if j.estimated_cost_eur %}
+            <span class="mono">{{ "%.2f"|format(j.estimated_cost_eur) }} €</span>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if j.status == 'done' %}
+            <strong>{{ j.total_leads }}</strong>
+            <span class="muted">/ {{ j.aptos_leads }} aptos</span>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td style="text-align: right; white-space: nowrap;">
+          <a href="{{ url_for('jobs.detail', job_id=j.id) }}" class="btn btn-sm btn-secondary">
+            Ver
+          </a>
+          {% if j.status in ('done', 'error', 'cancelled') %}
+          <form method="post" action="{{ url_for('jobs.delete', job_id=j.id) }}"
+                class="inline-form"
+                onsubmit="return confirm('¿Eliminar esta búsqueda y todos sus archivos?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-danger" title="Eliminar">×</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card empty">
+  <div class="empty-icon">∅</div>
+  <p>Aún no has lanzado ninguna búsqueda.</p>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function() {
+    // ===== Tabs =====
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const panels = document.querySelectorAll('[data-tab-panel]');
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        tabBtns.forEach(b => {
+          b.classList.toggle('active', b === btn);
+          b.style.borderBottomColor = b === btn ? 'var(--primary, #0066cc)' : 'transparent';
+        });
+        panels.forEach(p => {
+          p.style.display = p.dataset.tabPanel === tab ? '' : 'none';
+        });
+      });
+    });
+    // Inicializar el estilo del primero
+    if (tabBtns[0]) tabBtns[0].style.borderBottomColor = 'var(--primary, #0066cc)';
+
+    // ===== TAB CIUDAD =====
+    const grid = document.getElementById('segmentGrid');
+    const ambitoSel = document.getElementById('ambito');
+    const paginasSel = document.getElementById('max_paginas');
+    const estimateBox = document.getElementById('estimateBox');
+    const confirmHighCost = document.getElementById('confirmHighCost');
+
+    if (grid) {
+      grid.addEventListener('click', function(e) {
+        const card = e.target.closest('.segment-card');
+        if (!card) return;
+        grid.querySelectorAll('.segment-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        const input = card.querySelector('input[type=radio]');
+        if (input) { input.checked = true; updateEstimate(); }
+      });
+      ambitoSel.addEventListener('change', updateEstimate);
+      paginasSel.addEventListener('change', updateEstimate);
+    }
+
+    async function updateEstimate() {
+      const selected = grid.querySelector('.segment-card.selected');
+      if (!selected) return;
+      const segmento = selected.dataset.id;
+      const ambito = ambitoSel.value;
+      const max_paginas = paginasSel.value;
+      try {
+        const params = new URLSearchParams({ segmento, ambito, max_paginas });
+        const r = await fetch(`/jobs/estimate?${params}`, { credentials: 'same-origin' });
+        const data = await r.json();
+        renderEstimate(estimateBox, data);
+        confirmHighCost.style.display = (data.cost_eur || 0) >= 20 ? '' : 'none';
+      } catch (e) {
+        estimateBox.innerHTML = '<span class="muted">Error al estimar</span>';
+      }
+    }
+
+    function renderEstimate(box, data) {
+      const cost = data.cost_eur || 0;
+      const searches = data.text_searches || 0;
+      let html = `<div class="mono" style="font-size: 14px;"><strong>~${cost.toFixed(2)} €</strong></div>`;
+      html += `<div class="muted" style="font-size: 11px;">${searches.toLocaleString()} llamadas a Places API</div>`;
+      if (data.warnings && data.warnings.length) {
+        html += `<div style="font-size: 11px; color: var(--warning); margin-top: 4px;">⚠ ${data.warnings[0]}</div>`;
+      }
+      box.innerHTML = html;
+    }
+
+    // ===== TAB RADIO =====
+    const gridR = document.getElementById('segmentGridR');
+    const paginasSelR = document.getElementById('max_paginas_r');
+    const estimateBoxR = document.getElementById('estimateBoxR');
+    const confirmHighCostR = document.getElementById('confirmHighCostR');
+    const pointsContainer = document.getElementById('pointsContainer');
+    const addPointBtn = document.getElementById('addPointBtn');
+    const pointsJsonInput = document.getElementById('pointsJsonInput');
+    const formR = document.getElementById('newRadiusForm');
+    let pointCounter = 0;
+
+    function addPoint(lat = '', lng = '', radius = 5000, label = '') {
+      pointCounter++;
+      const idx = pointCounter;
+      const div = document.createElement('div');
+      div.className = 'point-row';
+      div.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr 1fr 1.5fr 40px; gap: 8px; margin-bottom: 8px; align-items: end;';
+      div.innerHTML = `
+        <div class="field" style="margin: 0;">
+          <label style="font-size: 11px;">Latitud</label>
+          <input type="number" class="pt-lat" step="0.0001" min="-90" max="90"
+                 value="${lat}" required placeholder="40.4168">
+        </div>
+        <div class="field" style="margin: 0;">
+          <label style="font-size: 11px;">Longitud</label>
+          <input type="number" class="pt-lng" step="0.0001" min="-180" max="180"
+                 value="${lng}" required placeholder="-3.7038">
+        </div>
+        <div class="field" style="margin: 0;">
+          <label style="font-size: 11px;">Radio (m)</label>
+          <input type="number" class="pt-radius" min="100" max="50000" step="100"
+                 value="${radius}" required>
+        </div>
+        <div class="field" style="margin: 0;">
+          <label style="font-size: 11px;">Etiqueta (opcional)</label>
+          <input type="text" class="pt-label" value="${label}" maxlength="80"
+                 placeholder="ej. centro Madrid">
+        </div>
+        <div>
+          <button type="button" class="btn btn-sm btn-danger pt-remove"
+                  style="width: 100%;" title="Quitar">×</button>
+        </div>
+      `;
+      pointsContainer.appendChild(div);
+      div.querySelector('.pt-remove').addEventListener('click', () => {
+        div.remove();
+        updateRadiusEstimate();
+      });
+      div.querySelectorAll('input').forEach(i => {
+        i.addEventListener('input', updateRadiusEstimate);
+      });
+      updateRadiusEstimate();
+    }
+
+    if (addPointBtn) {
+      addPointBtn.addEventListener('click', () => addPoint());
+    }
+
+    if (gridR) {
+      gridR.addEventListener('click', function(e) {
+        const card = e.target.closest('.segment-card');
+        if (!card) return;
+        gridR.querySelectorAll('.segment-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        const input = card.querySelector('input[type=radio]');
+        if (input) { input.checked = true; updateRadiusEstimate(); }
+      });
+      paginasSelR.addEventListener('change', updateRadiusEstimate);
+    }
+
+    function collectPoints() {
+      const rows = pointsContainer.querySelectorAll('.point-row');
+      const points = [];
+      rows.forEach((row, idx) => {
+        const lat = parseFloat(row.querySelector('.pt-lat').value);
+        const lng = parseFloat(row.querySelector('.pt-lng').value);
+        const radius = parseInt(row.querySelector('.pt-radius').value, 10);
+        const label = row.querySelector('.pt-label').value.trim();
+        if (!isNaN(lat) && !isNaN(lng) && !isNaN(radius)) {
+          points.push({ latitude: lat, longitude: lng, radius: radius,
+                        label: label || `punto_${idx + 1}` });
+        }
+      });
+      return points;
+    }
+
+    async function updateRadiusEstimate() {
+      if (!gridR) return;
+      const selected = gridR.querySelector('.segment-card.selected');
+      const points = collectPoints();
+      if (!selected || points.length === 0) {
+        estimateBoxR.innerHTML = '<span class="muted" style="font-size: 13px;">Selecciona segmento y añade al menos un punto</span>';
+        confirmHighCostR.style.display = 'none';
+        return;
+      }
+      const segmento = selected.dataset.id;
+      const max_paginas = paginasSelR.value;
+      try {
+        const params = new URLSearchParams({
+          segmento, num_points: points.length, max_paginas,
+        });
+        const r = await fetch(`/jobs/estimate-radius?${params}`, { credentials: 'same-origin' });
+        const data = await r.json();
+        renderEstimate(estimateBoxR, data);
+        confirmHighCostR.style.display = (data.cost_eur || 0) >= 20 ? '' : 'none';
+      } catch (e) {
+        estimateBoxR.innerHTML = '<span class="muted">Error al estimar</span>';
+      }
+    }
+
+    // Al enviar el form de radio, serializar los puntos a JSON
+    if (formR) {
+      formR.addEventListener('submit', (e) => {
+        const points = collectPoints();
+        if (points.length === 0) {
+          e.preventDefault();
+          alert('Añade al menos un punto.');
+          return;
+        }
+        pointsJsonInput.value = JSON.stringify(points);
+      });
+    }
+  })();
+</script>
+{% endblock %}

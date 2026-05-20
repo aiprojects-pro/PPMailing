@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+{% block title %}Leads · PPMailing{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+  <h1>Leads</h1>
+</div>
+
+<div class="stat-grid">
+  <div class="stat">
+    <div class="label">Total</div>
+    <div class="value">{{ stats.total or 0 }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Nuevos</div>
+    <div class="value">{{ stats.nuevos or 0 }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Contactados</div>
+    <div class="value">{{ stats.contactados or 0 }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Respondieron</div>
+    <div class="value">{{ stats.respondio or 0 }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Email MX OK</div>
+    <div class="value">{{ stats.email_mx_ok or 0 }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Aptos campaña</div>
+    <div class="value">{{ stats.aptos or 0 }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <form method="get" class="filters">
+    <div class="field-row-3" style="margin-bottom: 8px;">
+      <div class="field">
+        <label for="q">Buscar</label>
+        <input type="text" id="q" name="q" value="{{ filtros.search }}"
+               placeholder="nombre, email, localidad..." maxlength="200">
+      </div>
+      <div class="field">
+        <label for="segmento">Segmento</label>
+        <select name="segmento" id="segmento">
+          <option value="">— Todos —</option>
+          {% for s in segmentos_distinct %}
+            <option value="{{ s }}" {% if filtros.segmento == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="estado">Estado</label>
+        <select name="estado" id="estado">
+          <option value="">— Todos —</option>
+          <option value="nuevo" {% if filtros.estado == 'nuevo' %}selected{% endif %}>Nuevo</option>
+          <option value="contactado" {% if filtros.estado == 'contactado' %}selected{% endif %}>Contactado</option>
+          <option value="respondio" {% if filtros.estado == 'respondio' %}selected{% endif %}>Respondió</option>
+          <option value="descartado" {% if filtros.estado == 'descartado' %}selected{% endif %}>Descartado</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row-3">
+      <div class="field">
+        <label for="email_status">Validación email</label>
+        <select name="email_status" id="email_status">
+          <option value="">— Todas —</option>
+          <option value="mx_ok" {% if filtros.email_status == 'mx_ok' %}selected{% endif %}>MX OK</option>
+          <option value="mx_fail" {% if filtros.email_status == 'mx_fail' %}selected{% endif %}>MX falla</option>
+          <option value="" {% if not filtros.email_status %}disabled{% endif %}>Sin verificar (todos los anteriores incluidos)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="order">Ordenar por</label>
+        <select name="order" id="order">
+          <option value="score" {% if filtros.order_by == 'score' %}selected{% endif %}>Score (mayor primero)</option>
+          <option value="last_seen" {% if filtros.order_by == 'last_seen' %}selected{% endif %}>Más recientes</option>
+          <option value="first_seen" {% if filtros.order_by == 'first_seen' %}selected{% endif %}>Más antiguos</option>
+          <option value="nombre" {% if filtros.order_by == 'nombre' %}selected{% endif %}>Nombre A-Z</option>
+        </select>
+      </div>
+      <div class="field" style="display: flex; align-items: flex-end;">
+        <label style="font-weight: normal; display: flex; align-items: center; gap: 6px;">
+          <input type="checkbox" name="apto" value="1" {% if filtros.apto_only %}checked{% endif %}>
+          Solo aptos para campaña
+        </label>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px;">
+      <a href="{{ url_for('leads.index') }}" class="btn btn-secondary btn-sm">Limpiar filtros</a>
+      <button type="submit" class="btn btn-sm">Aplicar</button>
+    </div>
+  </form>
+</div>
+
+<div class="toolbar" style="margin-top: 16px;">
+  <div class="muted" style="font-size: 13px;">
+    Mostrando {{ leads|length }} de <strong>{{ total }}</strong> leads
+    {% if total_pages > 1 %}· página {{ page }} de {{ total_pages }}{% endif %}
+  </div>
+  <div class="actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+    <details style="position: relative;">
+      <summary class="btn btn-sm btn-secondary" style="display: inline-block;">
+        Validar emails ▾
+      </summary>
+      <div style="position: absolute; right: 0; background: white; border: 1px solid var(--border);
+                  padding: 12px; border-radius: var(--radius); margin-top: 6px;
+                  box-shadow: var(--shadow-lg); z-index: 10; min-width: 280px;">
+        <form method="post" action="{{ url_for('leads.bulk_validate_emails') }}"
+              onsubmit="return confirm('¿Validar los emails de los leads filtrados (hasta 500)?');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% for k, v in filtros.items() %}
+            {% if v %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}
+          {% endfor %}
+          <input type="hidden" name="only_unvalidated" value="1">
+          <div style="margin-bottom: 8px; font-size: 13px;"><strong>Método de validación</strong></div>
+          <label style="display: block; font-weight: normal; margin-bottom: 4px;">
+            <input type="radio" name="method" value="mx" checked> MX (gratis, rápido)
+          </label>
+          <label style="display: block; font-weight: normal; margin-bottom: 4px;">
+            <input type="radio" name="method" value="smtp"> SMTP (handshake)
+          </label>
+          <label style="display: block; font-weight: normal; margin-bottom: 8px;">
+            <input type="radio" name="method" value="mailgun"> Mailgun (de pago)
+          </label>
+          <button type="submit" class="btn btn-sm btn-block">Validar lote</button>
+        </form>
+      </div>
+    </details>
+
+    <form method="post" action="{{ url_for('leads.bulk_extract_social') }}"
+          class="inline-form"
+          onsubmit="return confirm('¿Extraer redes sociales para los leads filtrados (hasta 200)? Cada uno requiere descargar su web.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% for k, v in filtros.items() %}
+        {% if v %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}
+      {% endfor %}
+      <button type="submit" class="btn btn-sm btn-secondary">
+        Extraer redes sociales
+      </button>
+    </form>
+
+    <a href="{{ url_for('mailgun.push',
+                        segmento=filtros.segmento or '',
+                        estado=filtros.estado or '',
+                        email_status=filtros.email_status or '',
+                        apto='1' if filtros.apto_only else '',
+                        q=filtros.search or '') }}"
+       class="btn btn-sm btn-secondary"
+       title="Push de los leads filtrados a una mailing list de Mailgun">
+      Push a Mailgun →
+    </a>
+
+    <details style="position: relative;">
+      <summary class="btn btn-sm" style="display: inline-block;">Exportar CSV ▾</summary>
+      <div style="position: absolute; right: 0; background: white; border: 1px solid var(--border);
+                  padding: 12px; border-radius: var(--radius); margin-top: 6px;
+                  box-shadow: var(--shadow-lg); z-index: 10; min-width: 250px;">
+        <div style="margin-bottom: 8px; font-size: 13px;">
+          <strong>Opciones de exportación</strong>
+        </div>
+        <form method="get" action="{{ url_for('leads.export_csv') }}">
+          {% for k, v in filtros.items() %}
+            {% if v %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}
+          {% endfor %}
+          <label style="display: flex; align-items: center; gap: 6px; font-weight: normal; margin-bottom: 6px;">
+            <input type="checkbox" name="exclude_contacted" value="1">
+            Excluir ya contactados / respondieron
+          </label>
+          <label style="display: flex; align-items: center; gap: 6px; font-weight: normal; margin-bottom: 12px;">
+            <input type="checkbox" name="only_mx_ok" value="1">
+            Solo emails con MX OK
+          </label>
+          <button type="submit" class="btn btn-sm btn-block">Descargar CSV</button>
+        </form>
+      </div>
+    </details>
+  </div>
+</div>
+
+{% if leads %}
+<div class="table-card">
+  <table>
+    <thead>
+      <tr>
+        <th>Nombre</th>
+        <th>Email</th>
+        <th>Loc.</th>
+        <th>Score</th>
+        <th>Estado</th>
+        <th>Visto</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in leads %}
+      <tr>
+        <td>
+          <div>{{ l.nombre or '(sin nombre)' }}</div>
+          <div class="muted mono" style="font-size: 11px;">{{ l.segmento }}</div>
+        </td>
+        <td>
+          {% if l.email %}
+            <div class="mono" style="font-size: 12px;">{{ l.email }}</div>
+            {% if l.email_status == 'mx_ok' %}
+              <span class="badge" style="background: #d4edda; color: #155724;">MX OK</span>
+            {% elif l.email_status == 'mx_fail' %}
+              <span class="badge" style="background: #f8d7da; color: #721c24;">MX fail</span>
+            {% else %}
+              <span class="muted" style="font-size: 11px;">sin verificar</span>
+            {% endif %}
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td style="font-size: 12px;">{{ l.localidad or '—' }}</td>
+        <td>
+          {% if l.apto_campanya %}
+            <strong>{{ l.score }}</strong>
+            <div class="muted" style="font-size: 10px;">apto</div>
+          {% else %}
+            {{ l.score }}
+          {% endif %}
+        </td>
+        <td>
+          <span class="badge status-{{ 'done' if l.estado == 'respondio' else ('running' if l.estado == 'contactado' else ('error' if l.estado == 'descartado' else 'pending')) }}">
+            {% if l.estado == 'nuevo' %}Nuevo
+            {% elif l.estado == 'contactado' %}Contactado
+            {% elif l.estado == 'respondio' %}Respondió
+            {% elif l.estado == 'descartado' %}Descartado
+            {% endif %}
+          </span>
+        </td>
+        <td class="muted" style="font-size: 11px;">
+          {{ l.last_seen_at[:10] }}
+          {% if l.times_seen > 1 %}
+            <div>{{ l.times_seen }}× visto</div>
+          {% endif %}
+        </td>
+        <td style="text-align: right;">
+          <a href="{{ url_for('leads.detail', place_id=l.place_id) }}"
+             class="btn btn-sm btn-secondary">Ver</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if total_pages > 1 %}
+<div style="display: flex; justify-content: center; gap: 8px; margin-top: 16px;">
+  {% set base_args = {} %}
+  {% for k, v in filtros.items() %}
+    {% if v %}{% set _ = base_args.update({k: v}) %}{% endif %}
+  {% endfor %}
+  {% if page > 1 %}
+    <a href="{{ url_for('leads.index', page=page-1, **base_args) }}" class="btn btn-sm btn-secondary">← Anterior</a>
+  {% endif %}
+  <span class="muted" style="display: flex; align-items: center;">
+    Página {{ page }} de {{ total_pages }}
+  </span>
+  {% if page < total_pages %}
+    <a href="{{ url_for('leads.index', page=page+1, **base_args) }}" class="btn btn-sm btn-secondary">Siguiente →</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="card empty">
+  <div class="empty-icon">∅</div>
+  <p>No hay leads con esos filtros.</p>
+  {% if total == 0 and not filtros.search and not filtros.segmento and not filtros.estado %}
+    <p class="muted" style="font-size: 13px; margin-top: 12px;">
+      Lanza una búsqueda desde el dashboard y los leads aparecerán aquí
+      automáticamente al terminar.
+    </p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}
